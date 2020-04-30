@@ -2,9 +2,36 @@
 from flask_socketio import emit, send, join_room, leave_room, close_room
 from WebSocket_chat.models import User, Home, Msg, Now_count
 from WebSocket_chat import app, socketio, db
-# from flask_restful import  Api, reqparse, abort,MethodView
+from flask_restful import  Api, reqparse, abort,MethodView
 from flask import jsonify
 import json, random,datetime,base64,os
+
+
+api=Api(app)
+parse = reqparse.RequestParser()
+parse.add_argument('web_url', type=str)
+class GetHomeface(MethodView):
+    def get(self):
+        args = parse.parse_args()
+        web_url = args["web_url"]
+        N = Home.query.filter_by(web_url=web_url).count()
+        if N != 0:
+            try:
+                print("测试测试测试11111")
+                H=Home.query.filter_by(web_url=web_url).first()
+                path=H.home_face
+                return {"status": 200,"message": "GET success","home_face":str(path)}
+            except:
+                return {"status":404,"message":"GET failed"}
+        else:
+            try:
+                path="http://47.94.81.206/homes/init.jpg"
+                return {"status": 200, "message": "GET success", "home_face": str(path)}
+            except:
+                return {"status": 404, "message": "GET failed"}
+
+api.add_resource(GetHomeface, '/Get_homeface')
+
 
 
 def random_name():
@@ -53,7 +80,7 @@ def Init():
     user_name = random_name()
     while User.query.filter_by(name=user_name).count() != 0:
         user_name = random_name()
-    U = User(name=user_name,face="无",country="无")
+    U = User(name=user_name,face="http://47.94.81.206/users/init.jpg",country="无")
     db.session.add(U)
     db.session.commit()
     try:
@@ -62,7 +89,7 @@ def Init():
         c = datetime.datetime.now()
         C=c.strftime('%H:%M')
         emit('init',
-             {'name': str(user_name), 'id': str(id), 'face': '/py3env/web_socket/WebSocket_chat/static/users/init.jpg', 'country': '无', 'phone': '无', 'email': '无', 'info': '无','time':C},
+             {'name': str(user_name), 'id': str(id), 'face': 'http://47.94.81.206/users/init.jpg', 'country': '无', 'phone': '无', 'email': '无', 'info': '无','time':C},
              namespace="/")
     except:
         db.session.rollback()
@@ -91,9 +118,6 @@ def new_message(data):
                 emit('widespread',{'user_id': user_id, 'user_name': user_name, 'message': message, 'addtime': addtime.addtime},broadcast=True, namespace="/", room=room)
         else:
             addtime=Msg.query.filter_by(message=message,user_id=user_id).all()
-            print(addtime[0].addtime)
-            print(addtime[-1].addtime)
-            print(addtime)
             if room == "1":
                 emit('widespread', {'user_id':user_id,'user_name':user_name,'message':message,'addtime':addtime[-1].addtime}, broadcast=True, namespace="/",room="default")
             else:
@@ -113,32 +137,36 @@ def new_create(data):
     admin_id = data["admin_id"]
     url = data["url"]
     tag=data["tag"]
-    time = datetime.datetime.now()
-    T = time.strftime('%H:%M:%S')
-    Face = "/py3env/web_socket/WebSocket_chat/static/homes/" + str(url) + "." + tag
-    H = Home(web_url=url, home_face=Face, home_name=home_name, home_topic=home_topic, home_info=home_info,
+    h=Home.query.filter_by(admin_id=int(admin_id)).count()
+    if h==0:
+        time = datetime.datetime.now()
+        T = time.strftime('%H:%M:%S')
+        Face = "http://47.94.81.206/homes/" + str(admin_id) + "." + tag
+        H = Home(web_url=url, home_face=Face, home_name=home_name, home_topic=home_topic, home_info=home_info,
              admin_id=admin_id)
-    N = Now_count(count=1, home_url=url, admin_id=admin_id)
-    M=Msg(user_name="Matthew Wiggins",user_id=1,message="欢迎来到本房间~~~",room=str(url),addtime=str(T))
-    db.session.add(M)
-    db.session.commit()
-    db.session.add(H)
-    db.session.commit()
-    db.session.add(N)
-    db.session.commit()
-    try:
-        f = open("/py3env/web_socket/WebSocket_chat/static/homes/"+str(url)+"."+tag,'wb')
-        if tag == "jpg":
-            F = base64.b64decode(home_face[23:])
-        else:
-            F = base64.b64decode(home_face[22:])
-        f.write(F)
-        f.close()
-        emit('create', {'key': 1, 'name': str(home_name),'face':Face})
-        join_room(url, namespace="/")
-    except:
-        db.session.rollback()
-        emit('mistakes', {'key': 0, 'error': 'create'})
+        N = Now_count(count=1, home_url=url, admin_id=admin_id)
+        M=Msg(user_name="Matthew Wiggins",user_id=1,message="欢迎来到本房间~~~",room=str(url),addtime=str(T))
+        db.session.add(M)
+        db.session.commit()
+        db.session.add(H)
+        db.session.commit()
+        db.session.add(N)
+        db.session.commit()
+        try:
+            f = open("/py3env/web_socket/WebSocket_chat/static/homes/"+str(admin_id)+"."+tag,'wb')
+            if tag == "jpg":
+                F = base64.b64decode(home_face[23:])
+            else:
+                F = base64.b64decode(home_face[22:])
+            f.write(F)
+            f.close()
+            emit('create', {'key': 1, 'name': str(home_name),'face':Face})
+            join_room(url, namespace="/")
+        except:
+            db.session.rollback()
+            emit('create', {'key': 0, 'error': 'create'})
+    else:
+        emit('create', {'key': 0, 'error': 'create'})
 
 
 @socketio.on('join_default',namespace="/")
@@ -159,16 +187,20 @@ def join(data):
 def connect(join):
     room = join["room"]
     user_name = join["user_name"]
-    N = Now_count.query.filter_by(home_url=str(room)).first()
-    print(N)
-    N.count = N.count + 1
-    db.session.commit()
-    try:
-        join_room(room, namespace="/")
-        emit('join', {'key': 1, 'name': str(user_name),'roomid':room},  room=room)
-    except:
-        db.session.rollback()
-        emit('mistakes', {'key': 0, 'error': 'join'},room=room)
+    h = Home.query.filter_by(web_url=str(room)).count()
+    if h==1:
+        N = Now_count.query.filter_by(home_url=str(room)).first()
+        N.count = N.count + 1
+        db.session.commit()
+        try:
+            join_room(room, namespace="/")
+            emit('join', {'key': 1, 'name': str(user_name),'roomid':room},  room=room)
+        except:
+            db.session.rollback()
+            emit('join', {'key': 0, 'error': 'join'})
+    else:
+        emit('join', {'key': 0, 'error': 'join'})
+
 
 
 @socketio.on('leave', namespace="/")
@@ -243,7 +275,7 @@ def updateChat(data):
         print(dist)
     except:
         emit('mistakes', {'key': 0, 'error': 'updateChatRecord'}, namespace="/")
-
+ID=[]
 @socketio.on('updateUser',namespace="/")
 def updateuser(data):
     face=data['face']
@@ -253,25 +285,30 @@ def updateuser(data):
     tag=data['tag']
     id=data['id']
     try:
+        if str(id) in ID:
+            os.remove("/py3env/web_socket/WebSocket_chat/static/users/" + str(id) + "." + tag)
+            ID.remove(str(id))
+        ID.append(str(id))
         u=User.query.filter_by(id=id).first()
-        Face="/py3env/web_socket/WebSocket_chat/static/users/"+str(id)+"."+tag
-        print(1)
+        Face="http://47.94.81.206/users/"+str(id)+"."+tag
+        print("修改人物信息1")
         u.name=name
         db.session.commit()
-        u.face=Face
-        db.session.commit()
+        if u.face!=Face:
+            u.face=Face
+            db.session.commit()
         u.phone=phone
         db.session.commit()
         u.email=email
         db.session.commit()
-        print(1)
+        print("修改人物信息2")
         M=Msg.query.filter_by(user_id=int(id)).all()
         i = 0
         while (i < len(M)):
-            M[0].user_name=name
+            M[i].user_name=name
             db.session.commit()
             i=i+1
-        print(1)
+        print("修改人物信息3")
         f=open("/py3env/web_socket/WebSocket_chat/static/users/"+str(id)+"."+tag,'wb')
         if tag=="jpg":
             F = base64.b64decode(face[23:])
@@ -281,10 +318,12 @@ def updateuser(data):
         f.close()
         c = datetime.datetime.now()
         C = c.strftime('%H:%M')
+        print("修改人物信息4")
         emit('updateUser',{'key':1,'name': str(name), 'id': str(id), 'face':str(Face), 'country': '无', 'phone':phone, 'email': email,'info': '无', 'time': C},namespace="/")
     except:
         db.session.rollback()
-        emit('mistakes',{'key':0,'error':'updateUser'},namespace="/")
+        ID.remove(str(id))
+        emit('updateUser',{'key':0,'error':'updateUser'},namespace="/")
 
 @socketio.on('DeleteRoom',namespace="/")
 def Del(data):
@@ -309,7 +348,7 @@ def Del(data):
         db.session.rollback()
         emit('mistakes',{'key':0,'error':'DeleteRoom'},room=room,namespace="/")
 
-socketio.on('changeHome',namespace="/")
+@socketio.on('changeHome',namespace="/")
 def change(data):
     home_face = data["home_face"]
     home_name = data["home_name"]
@@ -319,10 +358,7 @@ def change(data):
     url = data["url"]
     tag = data["tag"]
     try:
-        Face = "/py3env/web_socket/WebSocket_chat/static/homes/" + str(url) + "." + tag
         H = Home.query.filter_by(admin_id=int(admin_id)).first()
-        H.home_face = Face
-        db.session.commit()
         H.home_name = home_name
         db.session.commit()
         H.home_topic = home_topic
@@ -336,10 +372,11 @@ def change(data):
             F = base64.b64decode(home_face[22:])
         f.write(F)
         f.close()
+        print("更新房间")
         emit('changeHome',{'key':1},namespace="/",room=url)
     except:
         db.session.rollback()
-        emit('mistakes', {'key': 0,'error':'changeHome'}, namespace="/", room=url)
+        emit('changeHome', {'key': 0,'error':'changeHome'}, namespace="/", room=url)
 
 flag = []
 
@@ -349,5 +386,3 @@ def text(data):
     print(data)
     flag.append('hello')
     emit('text', {'response': 'hello world!'}, namespace="/a")
-
-

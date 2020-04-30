@@ -10,7 +10,7 @@ import uuid
 random=uuid.uuid4()
 class Config():
     ECRET_KEY = random
-    SQLALCHEMY_DATABASE_URI = "mysql+pymysql://root:123456@127.0.0.1:3306/websocket_chat"
+    SQLALCHEMY_DATABASE_URI = "mysql+pymysql://root:Cold123#@localhost:3306/websocket_chat"
     SQLALCHEMY_TRACK_MODIFICATIONS = True
     MAX_CONTENT_LENGTH = 40 * 1024 * 1024
     SQLALCHEMY_POOL_SIZE = 1024
@@ -21,7 +21,8 @@ class Config():
 app = Flask(__name__)
 app.config.from_object(Config)
 CORS(app)
+async_mode = "eventlet"
+socketio = SocketIO(app,async_mode=async_mode,cors_allowed_origins='*')
 db = SQLAlchemy(app)
-socketio = SocketIO(app,cors_allowed_origins='*')  # type: SocketIO
 
 import WebSocket_chat.WebSocket_chat_api
